@@ -1,0 +1,858 @@
+@import "tailwindcss";
+
+/* ============================================================
+   AMÉ — JARVIS / BLADE RUNNER DESIGN SYSTEM
+   All colors driven by CSS variables — theme changes at runtime
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* ── Core palette — defaults (Linear/Raycast neutral dark) ─────── */
+  --ame-bg:            #09090b;
+  --ame-bg-subtle:     #121214;
+  --ame-bg-card:       #18181b;
+  --ame-bg-elevated:   #27272a;
+  --ame-bg-hover:      #27272a;
+
+  /* ── Accent ───────────────────────────────────────────────── */
+  --ame-accent:        #00d084;
+  --ame-accent-light:  hsl(160, 80%, 72%);
+  --ame-accent-dim:    hsl(160, 80%, 30%);
+  --ame-accent-ghost:  color-mix(in srgb, var(--ame-accent) 10%, transparent);
+  --ame-accent-glow:   color-mix(in srgb, var(--ame-accent) 20%, transparent);
+
+  /* ── Status colors — fixed, never themed ─────────────────── */
+  --ame-green:         #34d399;
+  --ame-green-dim:     rgba(52, 211, 153, 0.10);
+  --ame-cyan:          #22d3ee;
+  --ame-cyan-dim:      rgba(34, 211, 238, 0.10);
+  --ame-amber:         #fbbf24;
+  --ame-amber-dim:     rgba(251, 191, 36, 0.10);
+  --ame-rose:          #fb7185;
+  --ame-rose-dim:      rgba(251, 113, 133, 0.10);
+
+  /* ── Text ─────────────────────────────────────────────────── */
+  --ame-text:          #fafafa;
+  --ame-text-secondary:#a1a1aa;
+  --ame-text-tertiary: #71717a;
+  --ame-text-ghost:    #52525b;
+
+  /* ── Borders ──────────────────────────────────────────────── */
+  --ame-border:        rgba(255, 255, 255, 0.08);
+  --ame-border-subtle: rgba(255, 255, 255, 0.04);
+  --ame-border-accent: color-mix(in srgb, var(--ame-accent) 30%, transparent);
+
+  /* ── Chat bubble backgrounds ─────────────────────────────── */
+  --ame-bubble-bg: var(--ame-bg-card);
+
+  /* ── Sidebar / input bar ─────────────────────────────────── */
+  --ame-sidebar-bg:    rgba(9, 9, 11, 0.95);
+  --ame-input-bar-bg:  var(--ame-bg-card);
+
+  /* ── Typography ───────────────────────────────────────────── */
+  --ame-sans:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ame-mono:    'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --ame-display: 'Inter', -apple-system, sans-serif;
+
+  /* ── Dimensions ───────────────────────────────────────────── */
+  --ame-radius-sm:  6px;
+  --ame-radius-md:  10px;
+  --ame-radius-lg:  14px;
+  --ame-radius-xl:  20px;
+  --ame-titlebar-h: 44px;
+  --ame-sidebar-w:  280px;
+}
+
+/* ── Reset ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  width: 100%; height: 100%;
+  margin: 0; padding: 0;
+  overflow: hidden;
+  background-color: var(--ame-bg);
+}
+
+body {
+  font-family: var(--ame-sans);
+  background: var(--ame-bg);
+  color: var(--ame-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ame-border-accent); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ame-accent-dim); }
+
+/* ============================================================
+   BACKGROUND SYSTEM
+   ============================================================ */
+
+/* Scanlines — CSS only, no JS */
+.bg-scanlines {
+  position: fixed; inset: 0; pointer-events: none; z-index: 1;
+}
+.bg-scanlines::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    var(--ame-scanline-color, rgba(255, 255, 255, 0.01)) 2px,
+    var(--ame-scanline-color, rgba(255, 255, 255, 0.01)) 4px
+  );
+  animation: scanMove 8s linear infinite;
+  pointer-events: none;
+}
+@keyframes scanMove {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 80px; }
+}
+
+/* Radial orb glow behind center */
+.bg-orb-glow {
+  position: fixed; pointer-events: none; z-index: 0;
+  width: 700px; height: 700px;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    color-mix(in srgb, var(--ame-accent) 4%, transparent) 0%,
+    transparent 60%
+  );
+}
+
+/* HUD corner decorations */
+.hud-tl,
+.hud-br {
+  position: fixed; pointer-events: none; z-index: 2;
+  width: 60px; height: 60px;
+  opacity: 0.3;
+}
+.hud-tl {
+  top: 48px; left: 12px;
+  border-top: 1px solid var(--ame-accent);
+  border-left: 1px solid var(--ame-accent);
+}
+.hud-br {
+  bottom: 12px; right: 12px;
+  border-bottom: 1px solid var(--ame-accent);
+  border-right: 1px solid var(--ame-accent);
+}
+
+/* Legacy bg helpers used by other components */
+.bg-mesh {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 20%, var(--ame-accent-ghost) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, hsla(160, 80%, 55%, 0.02) 0%, transparent 60%);
+}
+.bg-noise {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.012;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+.bg-glow { display: none; }
+
+/* ============================================================
+   GLASS SURFACES (used by SettingsPanel, ToolsPanel, etc.)
+   ============================================================ */
+.glass {
+  background: var(--ame-bg-card);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  border: 1px solid var(--ame-border);
+}
+.glass-subtle {
+  background: var(--ame-bg-elevated);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--ame-border-subtle);
+}
+
+/* ============================================================
+   TITLE BAR
+   ============================================================ */
+.titlebar {
+  height: var(--ame-titlebar-h);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px;
+  background: var(--ame-bg);
+  border-bottom: 1px solid var(--ame-border-subtle);
+  -webkit-app-region: drag;
+  position: relative; z-index: 100;
+  flex-shrink: 0;
+}
+.titlebar-nodrag { -webkit-app-region: no-drag; }
+
+/* AMÉ wordmark */
+.titlebar-brand {
+  font-family: var(--ame-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  color: var(--ame-text-secondary);
+  text-transform: uppercase;
+  font-variant: small-caps;
+}
+
+/* Center state indicator */
+.titlebar-state {
+  display: flex; align-items: center; gap: 7px;
+  position: absolute; left: 50%; transform: translateX(-50%);
+}
+.titlebar-state-label {
+  font-family: var(--ame-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* ── Window controls ───────────────────────────────────────── */
+.win-btn {
+  width: 11px; height: 11px; border-radius: 50%;
+  border: none; cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.win-btn:hover { opacity: 0.8; transform: scale(1.15); }
+
+/* ── Status dot ────────────────────────────────────────────── */
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  animation: pulse 2.5s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* Legacy badge used in other places */
+.status-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 100px;
+  font-family: var(--ame-mono);
+  font-size: 11px; letter-spacing: 0.04em; font-weight: 500;
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--ame-radius-sm);
+  border: none;
+  background: var(--ame-accent);
+  color: white;
+  font-family: var(--ame-mono);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.btn-primary:hover { background: var(--ame-accent-light); box-shadow: 0 0 20px var(--ame-accent-glow); }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--ame-radius-sm);
+  border: 1px solid var(--ame-border);
+  background: transparent;
+  color: var(--ame-text-secondary);
+  font-family: var(--ame-mono);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.btn-ghost:hover { border-color: var(--ame-border-accent); color: var(--ame-accent-light); background: var(--ame-accent-ghost); }
+.btn-ghost.active { border-color: var(--ame-accent); color: var(--ame-accent-light); background: var(--ame-accent-ghost); }
+
+.btn-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--ame-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ame-text-secondary);
+  cursor: pointer; transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.btn-icon:hover { background: var(--ame-bg-hover); color: var(--ame-text); }
+
+/* ============================================================
+   INPUT FIELDS (shared with SettingsPanel etc.)
+   ============================================================ */
+.input-field {
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: var(--ame-radius-sm);
+  border: 1px solid var(--ame-border);
+  background: var(--ame-bg-elevated);
+  color: var(--ame-text);
+  font-family: var(--ame-sans);
+  font-size: 14px; line-height: 1.5;
+  outline: none; transition: all 0.2s ease;
+}
+.input-field:focus { border-color: var(--ame-accent); box-shadow: 0 0 0 2px var(--ame-accent-ghost); }
+.input-field::placeholder { color: var(--ame-text-ghost); }
+select.input-field { cursor: pointer; }
+select.input-field option { background: var(--ame-bg-card); color: var(--ame-text); }
+
+/* ============================================================
+   FLOATING TEXT — no bubbles, no containers
+   ============================================================ */
+
+/* User text — right-aligned */
+.msg-user {
+  color: var(--ame-text);
+  font-size: 14.5px;
+  font-family: var(--ame-sans);
+  line-height: 1.8;
+  max-width: 60%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  text-align: right;
+  unicode-bidi: plaintext;
+  letter-spacing: 0.01em;
+}
+
+/* Amé text — left-aligned, accent bar */
+.msg-ame {
+  color: var(--ame-text);
+  font-size: 14.5px;
+  font-family: var(--ame-sans);
+  line-height: 1.8;
+  max-width: 60%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  padding-left: 14px;
+  border-left: 2px solid var(--ame-accent);
+  position: relative;
+  unicode-bidi: plaintext;
+}
+
+/* Accent bar fades in with the message */
+@keyframes accentBarReveal {
+  from { opacity: 0; transform: scaleY(0.4); }
+  to   { opacity: 1; transform: scaleY(1); }
+}
+.msg-ame {
+  border-image: none;
+  animation: accentBarReveal 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Live (still streaming) — accent bar pulses gently */
+.msg-ame-live {
+  border-left-color: var(--ame-accent);
+  animation: accentPulse 1.4s ease-in-out infinite;
+}
+@keyframes accentPulse {
+  0%, 100% { border-left-color: var(--ame-accent); }
+  50%       { border-left-color: color-mix(in srgb, var(--ame-accent) 40%, transparent); }
+}
+
+/* Finalized — last word resolves, bar goes sharp */
+.msg-ame-final {
+  border-left-color: var(--ame-accent);
+  opacity: 1;
+}
+
+.msg-ame p { margin-bottom: 8px; unicode-bidi: plaintext; }
+.msg-ame p:last-child { margin-bottom: 0; }
+.msg-ame code {
+  background: var(--ame-accent-ghost);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--ame-mono);
+  font-size: 12px;
+  color: var(--ame-accent-light);
+}
+.msg-ame pre {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--ame-border-accent);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.msg-ame pre code { background: none; padding: 0; color: var(--ame-text); font-size: 12px; }
+.msg-ame ul, .msg-ame ol { padding-left: 18px; margin: 6px 0; }
+.msg-ame li { margin-bottom: 4px; }
+.msg-ame strong { color: var(--ame-accent-light); font-weight: 600; }
+.msg-ame a { color: var(--ame-cyan); text-decoration: none; border-bottom: 1px solid rgba(34,211,238,0.3); }
+.msg-ame a:hover { color: white; border-color: white; }
+
+/* Proactive — amber bar instead of accent */
+.msg-proactive {
+  border-left-color: var(--ame-accent);
+  opacity: 0.9;
+}
+.msg-proactive-urgent {
+  border-left-color: var(--ame-amber);
+}
+
+/* Older messages fade out — applied via inline style in component */
+
+.msg-system {
+  font-family: var(--ame-mono);
+  font-size: 10px;
+  color: var(--ame-text-tertiary);
+  text-align: center;
+  padding: 2px 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Message timestamp */
+.msg-ts {
+  font-family: var(--ame-mono);
+  font-size: 10px;
+  color: var(--ame-text-ghost);
+  margin-top: 3px;
+  letter-spacing: 0.05em;
+  opacity: 0.5;
+}
+
+/* ── Typewriter cursor ─────────────────────────────────────── */
+.typewriter-cursor::after {
+  content: '_';
+  color: var(--ame-accent);
+  margin-left: 1px;
+  animation: cursorBlink 1s step-end infinite;
+  font-family: var(--ame-mono);
+}
+@keyframes cursorBlink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+/* ── Toggle switch ─────────────────────────────────────────── */
+.toggle { position: relative; width: 38px; height: 20px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  position: absolute; inset: 0; border-radius: 10px;
+  background: var(--ame-bg-elevated);
+  border: 1px solid var(--ame-border);
+  cursor: pointer; transition: all 0.25s ease;
+}
+.toggle input:checked + .toggle-track { background: var(--ame-accent-ghost); border-color: var(--ame-accent); }
+.toggle-track::after {
+  content: '';
+  position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--ame-text-tertiary);
+  transition: all 0.25s ease;
+}
+.toggle input:checked + .toggle-track::after {
+  transform: translateX(18px);
+  background: var(--ame-accent-light);
+  box-shadow: 0 0 8px var(--ame-accent-glow);
+}
+
+/* ── Quick action buttons (terminal style) ─────────────────── */
+.quick-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer; transition: all 0.12s ease;
+  color: var(--ame-text-secondary);
+  font-family: var(--ame-mono);
+  font-size: 12px;
+  text-align: left;
+}
+.quick-btn::before { content: '> '; color: var(--ame-accent); font-weight: 500; }
+.quick-btn:hover { background: var(--ame-accent-ghost); color: var(--ame-accent-light); }
+
+/* ── Tool card ─────────────────────────────────────────────── */
+.tool-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--ame-radius-sm);
+  border: 1px solid transparent;
+  transition: all 0.15s ease; cursor: pointer;
+}
+.tool-card:hover { background: var(--ame-bg-hover); border-color: var(--ame-border); }
+.tool-icon {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--ame-radius-sm);
+  background: var(--ame-accent-ghost);
+  border: 1px solid var(--ame-border);
+  font-size: 15px; flex-shrink: 0;
+}
+
+/* ── Agent steps ───────────────────────────────────────────── */
+.agent-step {
+  font-family: var(--ame-mono);
+  font-size: 11px; color: var(--ame-text-secondary);
+  display: flex; gap: 8px; align-items: flex-start;
+  line-height: 1.6; padding: 4px 0;
+}
+
+/* ── Overlay / Modal ───────────────────────────────────────── */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 90;
+}
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 91;
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: 80vh;
+  overflow-y: auto;
+  border-radius: var(--ame-radius-lg);
+}
+
+/* ── Section divider ───────────────────────────────────────── */
+.divider { height: 1px; background: var(--ame-border); margin: 16px 0; }
+
+/* ============================================================
+   SIDEBAR — overlay panel
+   ============================================================ */
+.sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--ame-sidebar-w);
+  z-index: 95;
+  display: flex; flex-direction: column;
+  background: var(--ame-sidebar-bg);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border-right: 1px solid var(--ame-border-subtle);
+  box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+
+.sidebar-section { padding: 14px 16px; }
+
+.sidebar-label {
+  font-family: var(--ame-mono);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.15em;
+  color: var(--ame-text-tertiary);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* ============================================================
+   CHAT AREA — transparent, over orb
+   ============================================================ */
+.chat-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 60px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  background: transparent;
+  color: var(--ame-text);
+  min-height: 0;
+}
+
+/* ============================================================
+   INPUT BAR
+   ============================================================ */
+.input-bar {
+  padding: 10px 18px;
+  margin: 0 auto 12px auto;
+  width: 100%;
+  max-width: 760px;
+  border-radius: 24px;
+  border: 1px solid var(--ame-border);
+  background: var(--ame-bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  box-sizing: border-box;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px var(--ame-border-subtle);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.input-bar:focus-within { border-color: var(--ame-border-accent); box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px var(--ame-accent-ghost); }
+
+/* Transparent chat input — underline only on focus */
+.chat-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-bottom: none;
+  border-radius: 0;
+  padding: 6px 2px;
+  color: var(--ame-text);
+  font-family: var(--ame-mono);
+  font-size: 15px;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+.chat-input::placeholder { color: var(--ame-text-ghost); font-style: normal; }
+.chat-input:focus { border-bottom: none; }
+
+/* Underline animation from left */
+.chat-input-wrap {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.chat-input-wrap::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  width: 0;
+  background: var(--ame-accent);
+  transition: width 0.25s ease;
+  pointer-events: none;
+}
+.chat-input-wrap:focus-within::after { width: 100%; }
+.chat-input-wrap .chat-input { border-bottom: none; }
+
+/* ── Mic button ────────────────────────────────────────────── */
+.mic-btn {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--ame-text-secondary);
+  cursor: pointer; transition: all 0.2s ease;
+  flex-shrink: 0; position: relative;
+}
+.mic-btn:hover { color: var(--ame-text); background: var(--ame-bg-hover); }
+.mic-btn.active {
+  background: rgba(34, 211, 238, 0.08);
+  color: var(--ame-cyan);
+}
+.mic-btn.active::before {
+  content: '';
+  position: absolute; inset: -5px;
+  border-radius: 50%;
+  border: 1px solid rgba(34,211,238,0.4);
+  animation: sonarRing 1.4s ease-out infinite;
+}
+.mic-btn.active::after {
+  content: '';
+  position: absolute; inset: -10px;
+  border-radius: 50%;
+  border: 1px solid rgba(34,211,238,0.2);
+  animation: sonarRing 1.4s ease-out 0.4s infinite;
+}
+@keyframes sonarRing {
+  0%   { transform: scale(0.9); opacity: 0.8; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+/* ── Send button ───────────────────────────────────────────── */
+.send-btn {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  border: none;
+  background: var(--ame-accent);
+  color: white;
+  cursor: pointer; transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.send-btn:hover { background: var(--ame-accent-light); box-shadow: 0 0 18px var(--ame-accent-glow); }
+.send-btn:disabled { opacity: 0.2; cursor: default; }
+.send-btn:disabled:hover { background: var(--ame-accent); box-shadow: none; }
+
+/* ============================================================
+   ORB AMBIENT BACKGROUND
+   ============================================================ */
+.orb-ambient { display: none; }
+
+/* Sonar pulse ring when listening */
+.orb-pulse-ring {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 2;
+  width: 360px; height: 360px;
+  border-radius: 50%;
+  border: 1px solid var(--ame-cyan);
+  animation: orbPulse 2s ease-out infinite;
+}
+.orb-pulse-ring:nth-child(2) { animation-delay: 0.6s; }
+@keyframes orbPulse {
+  0%   { transform: translate(-50%, -50%) scale(0.85); opacity: 0.15; }
+  100% { transform: translate(-50%, -50%) scale(1.4);  opacity: 0; }
+}
+
+/* Rotating dashed arc when thinking */
+.orb-thinking-arc {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 2;
+  width: 380px; height: 380px;
+  border-radius: 50%;
+  border: 1px dashed var(--ame-border-accent);
+  animation: slowSpin 6s linear infinite;
+}
+.orb-thinking-arc:nth-child(2) {
+  width: 410px; height: 410px;
+  border-color: var(--ame-accent-ghost);
+  animation: slowSpin 9s linear infinite reverse;
+}
+@keyframes slowSpin { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+/* ============================================================
+   ORB MODE — immersive orb-only view
+   ============================================================ */
+
+/* Listening glow — soft cyan pulse ring */
+.orb-mode-glow-listening {
+  position: absolute;
+  inset: -30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ame-cyan);
+  opacity: 0;
+  animation: orbModeListenPulse 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+.orb-mode-glow-listening:nth-child(2) {
+  inset: -50px;
+  animation-delay: 0.8s;
+  border-color: var(--ame-cyan);
+  opacity: 0;
+}
+@keyframes orbModeListenPulse {
+  0%   { opacity: 0;    transform: scale(0.95); }
+  40%  { opacity: 0.25; transform: scale(1.0);  }
+  100% { opacity: 0;    transform: scale(1.12); }
+}
+
+/* Speaking breathe — warm amber glow + rhythmic scale */
+.orb-mode-glow-speaking {
+  position: absolute;
+  inset: -24px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--ame-amber-dim) 0%, transparent 70%);
+  opacity: 0;
+  animation: orbModeSpeakGlow 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes orbModeSpeakGlow {
+  0%   { opacity: 0.15; transform: scale(0.98); }
+  50%  { opacity: 0.35; transform: scale(1.04); }
+  100% { opacity: 0.15; transform: scale(0.98); }
+}
+
+/* Orb breathe in speaking mode — slow and smooth */
+@keyframes orbBreathe {
+  0%   { transform: translate(-50%, -50%) scale(1.18); }
+  50%  { transform: translate(-50%, -50%) scale(1.24); }
+  100% { transform: translate(-50%, -50%) scale(1.18); }
+}
+/* Applied with: animation: orbBreathe 3s ease-in-out infinite */
+
+/* State label floating below orb */
+.orb-mode-state {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+.orb-mode-state-label {
+  font-family: var(--ame-mono);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+/* ============================================================
+   TYPING INDICATOR — terminal underscore
+   ============================================================ */
+.terminal-cursor {
+  display: inline-block;
+  width: 8px; height: 14px;
+  background: var(--ame-accent-light);
+  margin-left: 4px;
+  vertical-align: middle;
+  animation: cursorBlink 1s step-end infinite;
+}
+
+/* ============================================================
+   EMPTY STATE / SUGGESTIONS
+   ============================================================ */
+.empty-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px; text-align: center;
+  flex: 1;
+  padding: 40px 60px;
+}
+.suggestion-chip {
+  display: inline-flex; align-items: center;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ame-border-accent);
+  background: var(--ame-accent-ghost);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--ame-text-secondary);
+  font-family: var(--ame-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.suggestion-chip:hover {
+  border-color: var(--ame-accent);
+  color: var(--ame-accent-light);
+  background: var(--ame-accent-ghost);
+}
+
+/* ============================================================
+   STATUS BAR (below input — model + uptime)
+   ============================================================ */
+.status-line {
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 16px 20px;
+  font-family: var(--ame-mono);
+  font-size: 10px;
+  color: var(--ame-text-ghost);
+  letter-spacing: 0.05em;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   WAVEFORM (kept for legacy, not rendered visibly)
+   ============================================================ */
+.orb-stage { display: none; }
+.waveform-container { display: none; }
+.orb-state-label { display: none; }
+
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
