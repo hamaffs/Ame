@@ -1199,48 +1199,52 @@ export default function App() {
       {/* Background layers */}
       <div className="bg-scanlines" />
 
-      {/* Orb — fades in/out with AnimatePresence so unmount is animated */}
-      <AnimatePresence>
-        {(!chatVisible || !isMuted) && (
-          <motion.div
-            key="orb"
-            initial={{ opacity: 0, scale: 0.88 }}
-            animate={{
-              opacity: !chatVisible ? 1 : (ameState === 'idle' ? 0.6 : 1),
-              scale: !chatVisible ? 1.18 : 1,
-            }}
-            exit={{ opacity: 0, scale: 0.88 }}
-            transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
-            style={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              x: '-50%',
-              y: '-50%',
-              width: 380,
-              height: 380,
-              zIndex: chatVisible ? 1 : 5,
-              pointerEvents: 'none',
-            }}
-          >
-            <OrbScene
-              state={ameState}
-              size={380}
-              accentColor={accentColor}
-              orbMode={!chatVisible}
-            />
-            {!chatVisible && ameState === 'listening' && (
-              <>
-                <div className="orb-mode-glow-listening" />
-                <div className="orb-mode-glow-listening" />
-              </>
-            )}
-            {!chatVisible && ameState === 'speaking' && (
-              <div className="orb-mode-glow-speaking" />
-            )}
-          </motion.div>
+      {/* Orb — always present. Mute dims her but never hides her, so the user
+          still sees their companion is there even when not listening. */}
+      <motion.div
+        key="orb"
+        initial={{ opacity: 0, scale: 0.88 }}
+        animate={{
+          // Visibility rules (top wins):
+          //   chat hidden       → full presence (orb mode)
+          //   muted (any state) → dim ghost (0.35) so it's clearly "off"
+          //   idle              → soft (0.6)
+          //   active            → full (1.0)
+          opacity: !chatVisible
+            ? 1
+            : (isMuted ? 0.35 : (ameState === 'idle' ? 0.6 : 1)),
+          scale: !chatVisible ? 1.18 : 1,
+          filter: (chatVisible && isMuted) ? 'saturate(0.5)' : 'saturate(1)',
+        }}
+        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+        style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          x: '-50%',
+          y: '-50%',
+          width: 380,
+          height: 380,
+          zIndex: chatVisible ? 1 : 5,
+          pointerEvents: 'none',
+        }}
+      >
+        <OrbScene
+          state={ameState}
+          size={380}
+          accentColor={accentColor}
+          orbMode={!chatVisible}
+        />
+        {!chatVisible && ameState === 'listening' && !isMuted && (
+          <>
+            <div className="orb-mode-glow-listening" />
+            <div className="orb-mode-glow-listening" />
+          </>
         )}
-      </AnimatePresence>
+        {!chatVisible && ameState === 'speaking' && (
+          <div className="orb-mode-glow-speaking" />
+        )}
+      </motion.div>
 
       {/* Orb-mode state label — visible only when chat is hidden, below the orb */}
       <div className="orb-mode-state" style={{
