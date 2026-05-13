@@ -165,7 +165,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    # Authorization is required by the wizard (Bearer session token).
+    # X-Requested-With is included for libs that auto-add it.
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 socket_app = socketio.ASGIApp(sio, app)
 

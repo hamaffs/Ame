@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Amé launcher — one-shot dev command.
+#
+# Boots:
+#   1. Vite dev server   (frontend on http://localhost:5173)
+#   2. Electron shell    (loads the React app, opens main window + orb)
+#   3. Python backend    (auto-spawned by Electron via main.cjs, on port 8766)
+#
+# First-run behaviour: if dependencies aren't installed yet, this script will
+# bootstrap them (Python venv + pip + npm install).
+#
+# Usage:
+#   ame              # launch the app
+#   ame --setup      # only bootstrap deps, don't launch
+#   ame --backend    # run only the Python backend (useful for backend debugging)
+#   ame --frontend   # run only Vite + Electron (no backend)
+
+set -e
+
+# Resolve the repo root from this script's location (works even if symlinked).
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+cd "$REPO_DIR"
+
+# ── Color helpers ─────────────────────────────────────────────────────────
+c_dim()  { printf "\033[2m%s\033[0m\n" "$*"; }
+c_ok()   { printf "\033[32m%s\033[0m\n" "$*"; }
+c_warn() { printf "\033[33m%s\033[0m\n" "$*"; }
+c_err()  { printf "\033[31m%s\033[0m\n" "$*" >&2; }
+
+need_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    c_err "Missing required command: $1"
+    return 1
+  fi
+}
+
+bootstrap_node() {
+  if [ ! -d node_modules ]; then
+    c_warn "node_modules/ missing — running npm install…"
+    need_cmd npm || exit 1
+    npm install --no-audit --no-fund
+    c_ok "✓ node_modules ready"
+  fi
+}
+
+bootstrap_python() {
+  if [ ! -x .venv/bin/python ] && [ ! -x .venv/bin/python3 ]; then
+    c_warn ".venv/ missing — creating Python virtual environment…"
+    need_cmd python3 || exit 1
+    python3 -m venv .venv
+  fi
+  if [ ! -f .venv/.deps-installed ] || [ requirements.txt -nt .venv/.deps-installed ]; then
+    c_warn "Installing Python dependencies (this can take a minute)…"
+    .venv/bin/pip install --upgrade pip >/dev/null
+    .venv/bin/pip install -r requirements.txt
+    touch .venv/.deps-installed
+    c_ok "✓ Python deps ready"
+  fi
+}
+
+bootstrap_all() {
+  bootstrap_node
+  bootstrap_python
+}
+
+case "${1:-}" in
+  --setup)
+    c_dim "Running first-time setup only — will not launch app."
+    bootstrap_all
+    c_ok "Done. Run \`ame\` to launch."
+    exit 0
+    ;;
+  --backend)
+    bootstrap_python
+    c_dim "Starting backend only (port 8766)…"
+    exec .venv/bin/python -u -m backend.server
+    ;;
+  --frontend)
+    bootstrap_node
+    c_dim "Starting Vite + Electron only (no Python backend)…"
+    exec npm run electron:dev
+    ;;
+  -h|--help)
+    sed -n '2,18p' "$SCRIPT_PATH"
+    exit 0
+    ;;
+  "")
+    bootstrap_all
+    c_dim "Launching Amé — Vite, Electron, and Python backend will boot together."
+    c_dim "Press Ctrl+C in this terminal to stop everything."
+    exec npm run electron:dev
+    ;;
+  *)
+    c_err "Unknown option: $1"
+    c_err "Try: ame --help"
+    exit 2
+    ;;
+esac

@@ -1,18 +1,17 @@
-"""At-rest encryption for Amé memory files.
+"""At-rest encryption for Amé memory files — Linux edition.
 
-Primary on Windows: DPAPI (per-user, no passphrase needed).
-Primary on Linux/macOS: user-supplied passphrase via PBKDF2-HMAC-SHA256 + Fernet.
-Fallback everywhere: explicit plaintext when `_allow_plaintext` is set.
+Primary: user-supplied passphrase → PBKDF2-HMAC-SHA256 → Fernet (urlsafe AES-128).
+Fallback: explicit plaintext when `set_allow_plaintext(True)` is called.
 
-Callers pass no secrets — `encrypt_json` / `decrypt_json` pick the best
-available scheme. The choice is stamped into the on-disk envelope so reads
-work across mode changes.
+(The old Windows DPAPI branch is gone — Linux uses a passphrase, optionally
+sourced from the secret service / gnome-keyring via the caller; this module
+doesn't try to talk to the keyring itself, it just accepts the passphrase.)
 
-On-disk format (JSON, one envelope per file):
+On-disk format (JSON envelope, one per file):
     {
-      "scheme": "dpapi" | "fernet" | "plaintext",
-      "v": 1,
-      "salt": <base64, only for fernet>,
+      "scheme":  "fernet" | "plaintext",
+      "v":       1,
+      "salt":    <base64, only for fernet>,
       "payload": <base64 ciphertext, or plaintext JSON string>
     }
 """
@@ -22,18 +21,7 @@ import base64
 import hashlib
 import json
 import os
-import sys
 import threading
-
-
-_dpapi_available = False
-_win32crypt = None
-if sys.platform == "win32":
-    try:
-        import win32crypt as _win32crypt  # type: ignore
-        _dpapi_available = True
-    except Exception:
-        _dpapi_available = False
 
 
 _lock = threading.Lock()
@@ -42,7 +30,8 @@ _allow_plaintext = False
 
 
 def set_passphrase(pp: str | None) -> None:
-    """Caller (settings layer) supplies a user passphrase. None disables Fernet."""
+    """Caller (settings layer / keyring bridge) supplies a user passphrase.
+    None disables Fernet."""
     global _passphrase
     with _lock:
         _passphrase = pp
@@ -57,7 +46,7 @@ def set_allow_plaintext(allow: bool) -> None:
 def is_available() -> dict:
     """What does the current process have to work with?"""
     return {
-        "dpapi": _dpapi_available,
+        "dpapi": False,                     # always False on Linux — kept for API compat
         "fernet": _passphrase is not None,
         "plaintext_allowed": _allow_plaintext,
     }
@@ -82,17 +71,6 @@ def _fernet():
 def encrypt_json(obj) -> str:
     """Return a JSON-encoded envelope string."""
     raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-
-    if _dpapi_available and _win32crypt is not None:
-        try:
-            blob = _win32crypt.CryptProtectData(raw, "ame", None, None, None, 0)
-            return json.dumps({
-                "scheme":  "dpapi",
-                "v":       1,
-                "payload": base64.b64encode(blob).decode("ascii"),
-            })
-        except Exception:
-            pass  # fall through to next scheme
 
     if _passphrase:
         salt = os.urandom(16)
@@ -130,11 +108,13 @@ def decrypt_json(envelope: str):
     scheme = env.get("scheme")
 
     if scheme == "dpapi":
-        if not (_dpapi_available and _win32crypt):
-            raise RuntimeError("Envelope was DPAPI-encrypted but DPAPI is not available here")
-        blob = base64.b64decode(env["payload"])
-        _, raw = _win32crypt.CryptUnprotectData(blob, None, None, None, 0)
-        return json.loads(raw.decode("utf-8"))
+        # Legacy envelope written by the old Windows build. We can't decrypt
+        # these on Linux — surface a clear error so the caller can wipe and
+        # re-seed memory rather than silently treating the file as empty.
+        raise RuntimeError(
+            "Encountered a Windows DPAPI envelope on Linux. "
+            "Clear ~/.ame/memory/ to start fresh."
+        )
 
     if scheme == "fernet":
         if not _passphrase:

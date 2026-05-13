@@ -6,12 +6,14 @@
   "description": "Amé — a personal AI assistant (Electron + React + Python).",
   "main": "electron/main.cjs",
   "scripts": {
+    "start": "npm run electron:dev",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "electron": "electron .",
-    "electron:dev": "concurrently -k \"npm run dev\" \"wait-on tcp:5173 && electron .\"",
+    "electron:dev": "concurrently -k -n vite,electron -c cyan,magenta \"npm run dev\" \"wait-on tcp:5173 && electron .\"",
+    "backend": "./.venv/bin/python -u -m backend.server",
     "lint": "echo \"(no linter configured)\" && exit 0"
   },
   "dependencies": {

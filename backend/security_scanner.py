@@ -1,14 +1,15 @@
 """
-Ame First-Time Security Scanner.
+Ame First-Time Security Scanner — Linux edition.
+
 Waits for High (Autopilot) permission, performs a deep system & code audit,
 and proactively delivers a personalized security report to the user.
 
-Cross-platform: branches on `sys.platform`. Windows uses PowerShell to
-inspect Firewall + Defender; Linux uses `ufw`/`firewalld` + checks for an
-active AV daemon (clamd); macOS uses `defaults read` on the firewall plist.
+Linux probes (each is optional — missing tools are silently skipped):
+  - Firewall:  ufw / firewall-cmd / iptables / nftables
+  - AV:        clamav-daemon (via systemctl is-active)
+  - MAC:       AppArmor (aa-status) or SELinux (getenforce)
 """
 import os
-import sys
 import time
 import threading
 import subprocess
@@ -43,55 +44,44 @@ class SecurityScanner:
 
         sys_info = []
 
-        # 2. Gather platform-specific posture info.
+        # 2. Gather Linux posture: firewall + AV daemon + USBGuard + AppArmor.
+        for cmd in (["ufw", "status"],
+                    ["firewall-cmd", "--state"],
+                    ["systemctl", "is-active", "iptables"],
+                    ["systemctl", "is-active", "nftables"]):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=4)
+                if r.stdout.strip() or r.stderr.strip():
+                    sys_info.append(f"{cmd[0]}: {r.stdout.strip() or r.stderr.strip()}")
+                    break
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                print(f"[SecurityScanner] {cmd[0]} probe error: {e}")
+
+        # ClamAV
         try:
-            if sys.platform == "win32":
-                fw = subprocess.run(
-                    ["powershell", "-NoProfile", "-Command",
-                     "Get-NetFirewallProfile | Select-Object Name,Enabled | ConvertTo-Json"],
-                    capture_output=True, text=True, timeout=10,
-                )
-                if fw.stdout:
-                    sys_info.append(f"Firewall Profiles:\n{fw.stdout.strip()}")
-                av = subprocess.run(
-                    ["powershell", "-NoProfile", "-Command",
-                     "Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,AntispywareEnabled | ConvertTo-Json"],
-                    capture_output=True, text=True, timeout=10,
-                )
-                if av.stdout:
-                    sys_info.append(f"Windows Defender Status:\n{av.stdout.strip()}")
-            elif sys.platform.startswith("linux"):
-                # ufw / firewall-cmd / iptables in priority order
-                for cmd in (["ufw", "status"],
-                            ["firewall-cmd", "--state"],
-                            ["systemctl", "is-active", "iptables"]):
-                    try:
-                        r = subprocess.run(cmd, capture_output=True, text=True, timeout=4)
-                        if r.stdout.strip() or r.stderr.strip():
-                            sys_info.append(f"{cmd[0]}: {r.stdout.strip() or r.stderr.strip()}")
-                            break
-                    except FileNotFoundError:
-                        continue
-                # ClamAV is the closest equivalent to Defender on Linux.
-                try:
-                    r = subprocess.run(["systemctl", "is-active", "clamav-daemon"],
-                                       capture_output=True, text=True, timeout=4)
-                    sys_info.append(f"ClamAV daemon: {r.stdout.strip() or 'unknown'}")
-                except FileNotFoundError:
-                    pass
-            elif sys.platform == "darwin":
-                # macOS Application Firewall
-                try:
-                    r = subprocess.run(
-                        ["/usr/libexec/ApplicationFirewall/socketfilterfw", "--getglobalstate"],
-                        capture_output=True, text=True, timeout=4,
-                    )
-                    if r.stdout:
-                        sys_info.append(f"macOS Firewall: {r.stdout.strip()}")
-                except FileNotFoundError:
-                    pass
+            r = subprocess.run(["systemctl", "is-active", "clamav-daemon"],
+                               capture_output=True, text=True, timeout=4)
+            sys_info.append(f"ClamAV daemon: {r.stdout.strip() or 'unknown'}")
+        except FileNotFoundError:
+            pass
         except Exception as e:
-            print(f"[SecurityScanner] System scan error: {e}")
+            print(f"[SecurityScanner] clamav probe error: {e}")
+
+        # AppArmor / SELinux mode
+        try:
+            r = subprocess.run(["aa-status", "--enabled"], capture_output=True, text=True, timeout=3)
+            sys_info.append(f"AppArmor enabled: {r.returncode == 0}")
+        except FileNotFoundError:
+            try:
+                r = subprocess.run(["getenforce"], capture_output=True, text=True, timeout=3)
+                if r.stdout.strip():
+                    sys_info.append(f"SELinux: {r.stdout.strip()}")
+            except FileNotFoundError:
+                pass
+        except Exception:
+            pass
 
         # 3. Gather Code Security Info (Exposed .env, keys, etc.)
         code_info = []

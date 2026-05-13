@@ -849,6 +849,10 @@ class LiveSession:
         self._session_task = None
         # Latest RMS level from the mic callback — read by the frontend health ping
         self._mic_rms: float = 0.0
+        # Local barge-in detection: require sustained loud frames before
+        # cutting AME's playback, so a single echo spike from the speakers
+        # doesn't kill mid-sentence audio. See _BARGE_IN_FRAMES_NEEDED.
+        self._barge_loud_frame_count: int = 0
         # BUG 1 FIX: set True when we send a text message so _response_receiver
         # skips the input_transcription echo that would create a duplicate bubble.
         self._text_turn_pending: bool = False
@@ -1174,8 +1178,12 @@ class LiveSession:
         """Open Gemini Live session and run all coroutines concurrently."""
         api_key = os.getenv("GOOGLE_AI_STUDIO_KEY") or os.getenv("GEMINI_API_KEY")
         if not api_key:
-            print("[Live] ERROR: No Gemini API key found (GOOGLE_AI_STUDIO_KEY or GEMINI_API_KEY).")
-            await asyncio.sleep(10)
+            print("[Live] No Gemini API key yet — waiting 2s for /setup to provide one…")
+            # Short retry so the wizard's "Continue" doesn't leave the user
+            # staring at a dead UI. Also flag this as a graceful close so the
+            # outer reconnect loop doesn't add another 3s on top.
+            self._graceful_close = True
+            await asyncio.sleep(2)
             return
 
         try:
@@ -1221,13 +1229,25 @@ class LiveSession:
                 except Exception as _ce:
                     print(f"[ClapDetector] feed_audio error: {_ce}")
 
-            # Instant voice-activity barge-in: if the user speaks loudly while
-            # AME is playing audio, cut her playback so she doesn't talk over them.
-            # Threshold is 15000 (out of 32767) — high enough that AME's own voice
-            # bleeding through the mic (typically < 8000 peak) cannot trigger this,
-            # but a real human voice in the same room easily will.
-            # Only fire when there is actually audio queued (AME is speaking).
-            if peak > 15000 and not self._audio_out_queue.empty():
+            # Sustained-loud barge-in: cut AME's playback only when the mic
+            # stays loud for multiple consecutive frames, so a single spike
+            # of speaker echo / typing / a click doesn't kill her mid-sentence.
+            #
+            # Real human speech easily sustains >100ms. With CHUNK_SIZE=2048 at
+            # 16kHz that's ~128ms per frame, so 2-3 consecutive frames already
+            # implies real voice activity.
+            _BARGE_PEAK_THRESHOLD  = 18000   # raised from 15000 — Linux speakers
+                                              # bleed more echo than Windows.
+            _BARGE_FRAMES_NEEDED   = 3        # ~384ms of sustained sound
+
+            if peak > _BARGE_PEAK_THRESHOLD and not self._audio_out_queue.empty():
+                self._barge_loud_frame_count += 1
+            else:
+                self._barge_loud_frame_count = 0
+
+            if (self._barge_loud_frame_count >= _BARGE_FRAMES_NEEDED
+                    and not self._audio_out_queue.empty()):
+                self._barge_loud_frame_count = 0
                 try:
                     with self._audio_lock:
                         while not self._audio_out_queue.empty():
@@ -1235,6 +1255,7 @@ class LiveSession:
                                 self._audio_out_queue.get_nowait()
                             except Exception:
                                 break
+                    print(f"[Live] Local barge-in fired (sustained peak)")
                 except Exception as e:
                     print(f"[Live] Audio callback error: {e}")
 

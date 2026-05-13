@@ -83,26 +83,23 @@ _GLOB_MARKERS = {m for m in PROJECT_MARKERS if '*' in m}
 _EXACT_MARKERS = PROJECT_MARKERS - _GLOB_MARKERS
 
 SKIP_DIRS = {
-    # Windows system — never touch these
-    'windows', 'system32', 'syswow64', 'program files', 'program files (x86)',
-    'programdata', 'recovery', '$recycle.bin', 'msocache',
-    'system volume information', 'config.mss',
-    # Dev/build noise — large folders with no project value
+    # Dev / build noise
     'node_modules', '.git', '__pycache__', '.venv', 'venv', 'env',
     '.env', 'dist', 'build', 'target', '.cache', '.npm', '.yarn',
     'site-packages', 'lib', 'include', 'bin', 'obj',
-    '.nuget', '.dotnet', 'anaconda3', 'miniconda3', 'scoop',
-    # Windows noise inside AppData
-    'microsoft', 'nvidia', 'intel', 'amd', 'google', 'mozilla',
-    'packages', 'inetcache', 'history', 'cookies', 'temporary internet files',
-    'crashreports', 'crashpad', 'logs', 'cache', 'caches',
+    '.nuget', '.dotnet', 'anaconda3', 'miniconda3',
+    # Linux user-cache / runtime
+    '.local/share/trash', '.local/share/keyrings', '.local/share/flatpak',
+    'snap', '.flatpak', '.steam', '.thunderbird', '.mozilla',
+    '.config/google-chrome', '.config/chromium', '.config/microsoft',
+    'cache', 'caches', 'crashpad', 'crashreports', 'logs',
     'extensions', 'databases', 'localstorage', 'sessionstorage',
     'gpucache', 'code cache', 'snapshots', 'blob_storage',
-    'temp', 'tmp', 'windows.old', 'ntuser.dat',
-    # Programs and system app internals
-    'programs', 'microsoft vs code', 'resources', 'python311', 'python310', 'python39',
-    'tcl', 'tix8.4.3', 'tk8.6', 'tcl8.6',
-    # Downloaded archives/tools that aren't user projects
+    'temp', 'tmp',
+    # Browser / app internals
+    'microsoft', 'nvidia', 'intel', 'amd', 'google', 'mozilla',
+    'packages', 'history', 'cookies',
+    # Downloaded toolchains that aren't user projects
     'ffmpeg', 'node', 'npm',
 }
 
@@ -562,34 +559,20 @@ VULNERABLE: Hey, I noticed you just saved server.py with a hardcoded API key on 
             if os.path.isdir(candidate):
                 roots.append(candidate)
 
-        # Adobe Creative Suite projects — stored deep in AppData
-        adobe_roots = [
-            os.path.join(home, 'Documents', 'Adobe'),
-            os.path.join(home, 'AppData', 'Roaming', 'Adobe'),
-        ]
-        for adobe_root in adobe_roots:
-            if os.path.isdir(adobe_root):
-                roots.append(adobe_root)
-
-        # Common creative tool locations
-        creative_roots = [
-            os.path.join(home, 'AppData', 'Roaming', 'Ableton'),
-            os.path.join(home, 'AppData', 'Roaming', 'FL Studio'),
-        ]
-        for cr in creative_roots:
-            if os.path.isdir(cr):
-                roots.append(cr)
-
-        # Home directory itself
+        # Home directory itself (low priority; subdirs above are scanned first)
         roots.append(home)
 
-        # Other Windows drives
-        if sys.platform == 'win32':
-            import string
-            for letter in string.ascii_uppercase:
-                drive = f"{letter}:\\"
-                if os.path.isdir(drive) and drive.upper() != "C:\\":
-                    roots.append(drive)
+        # Removable + extra mount points on Linux.
+        for mount_parent in ("/media", "/mnt", "/run/media"):
+            if not os.path.isdir(mount_parent):
+                continue
+            try:
+                for entry in os.listdir(mount_parent):
+                    full = os.path.join(mount_parent, entry)
+                    if os.path.isdir(full):
+                        roots.append(full)
+            except OSError:
+                continue
 
         return roots
 
@@ -688,15 +671,13 @@ VULNERABLE: Hey, I noticed you just saved server.py with a hardcoded API key on 
             if len(files) < 1:
                 return
 
-            # Reject system/app/library paths — not user projects
+            # Reject system/app/library paths — not user projects.
             path_str_lower = str(path).lower()
             _reject_path_fragments = [
-                'appdata\\local\\programs',
-                'appdata\\roaming\\npm',
-                'python311', 'python310', 'python39', 'python38',
                 'node_modules', 'site-packages',
-                r'microsoft vs code',
-                r'windows\system',
+                '/.cache/', '/.local/share/flatpak/', '/.var/app/',
+                '/snap/', '/usr/lib/', '/usr/share/',
+                'python3.13', 'python3.12', 'python3.11', 'python3.10',
             ]
             if any(frag in path_str_lower for frag in _reject_path_fragments):
                 return

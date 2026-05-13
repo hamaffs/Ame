@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -145,13 +144,19 @@ def find_duplicates(path: str, limit: int = 25) -> dict:
 # ── Temp cleanup ───────────────────────────────────────────────────────────
 
 def _candidate_temp_dirs() -> list[Path]:
-    dirs = [Path(tempfile.gettempdir())]
+    """Directories that store throwaway data on Linux."""
     home = Path.home()
-    if sys.platform == "win32":
-        local = home / "AppData" / "Local"
-        dirs += [local / "Temp", local / "Microsoft" / "Windows" / "INetCache"]
-    else:
-        dirs += [home / ".cache"]
+    dirs = [
+        Path(tempfile.gettempdir()),
+        home / ".cache",
+        # Common per-app cache subdirs worth offering — they grow fast.
+        home / ".cache" / "thumbnails",
+        home / ".cache" / "tracker3",
+        home / ".cache" / "mozilla" / "firefox",
+        home / ".cache" / "chromium",
+        home / ".cache" / "google-chrome",
+        home / ".local" / "share" / "Trash",
+    ]
     return [d for d in dirs if d.is_dir()]
 
 

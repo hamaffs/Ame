@@ -108,8 +108,7 @@ function findPython() {
   const os = require('os')
   const settingsPath = path.join(os.homedir(), '.ame', 'settings.json')
 
-  // 1. Check settings.json first (survives Windows UAC env reset; also a
-  //    convenient way for the user to pin a specific venv on any platform).
+  // 1. Pinned via settings.json wins (lets the user override).
   try {
     if (fs.existsSync(settingsPath)) {
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
@@ -119,64 +118,45 @@ function findPython() {
     }
   } catch (e) {}
 
-  // 2. Platform-specific candidate list — first existing match wins.
-  let candidates = [process.env.AME_PYTHON]
-  let lookupCmd = null
-  if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
-    candidates.push(
-      path.join(localAppData, 'Programs', 'Python', 'Python313', 'python.exe'),
-      path.join(localAppData, 'Programs', 'Python', 'Python312', 'python.exe'),
-      path.join(localAppData, 'Programs', 'Python', 'Python311', 'python.exe'),
-      path.join(localAppData, 'Programs', 'Python', 'Python310', 'python.exe'),
-      'C:\\Python313\\python.exe',
-      'C:\\Python312\\python.exe',
-      'C:\\Python311\\python.exe',
-    )
-    lookupCmd = 'where python'
-  } else {
-    // Linux / macOS — prefer a project venv, then user-local, then system.
-    const home = os.homedir()
-    candidates.push(
-      path.join(__dirname, '..', '.venv', 'bin', 'python3'),
-      path.join(__dirname, '..', 'venv', 'bin', 'python3'),
-      path.join(__dirname, '..', 'backend', 'venv', 'bin', 'python3'),
-      path.join(home, '.venvs', 'ame', 'bin', 'python3'),
-      '/usr/local/bin/python3.13',
-      '/usr/local/bin/python3.12',
-      '/usr/local/bin/python3.11',
-      '/usr/local/bin/python3',
-      '/usr/bin/python3.13',
-      '/usr/bin/python3.12',
-      '/usr/bin/python3.11',
-      '/usr/bin/python3',
-    )
-    lookupCmd = 'command -v python3 python || true'
-  }
+  // 2. Linux candidates — project venv first, then user-local, then system.
+  const home = os.homedir()
+  const candidates = [
+    process.env.AME_PYTHON,
+    path.join(__dirname, '..', '.venv', 'bin', 'python3'),
+    path.join(__dirname, '..', 'venv', 'bin', 'python3'),
+    path.join(__dirname, '..', 'backend', 'venv', 'bin', 'python3'),
+    path.join(home, '.venvs', 'ame', 'bin', 'python3'),
+    '/usr/local/bin/python3.13',
+    '/usr/local/bin/python3.12',
+    '/usr/local/bin/python3.11',
+    '/usr/local/bin/python3',
+    '/usr/bin/python3.13',
+    '/usr/bin/python3.12',
+    '/usr/bin/python3.11',
+    '/usr/bin/python3',
+  ]
 
   let foundPath = null
   for (const p of candidates) {
     if (p && fs.existsSync(p)) { foundPath = p; break }
   }
 
-  // 3. Last resort — ask the shell. On Windows, skip the WindowsApps stub.
-  if (!foundPath && lookupCmd) {
+  // 3. Last resort — ask the shell.
+  if (!foundPath) {
     try {
-      const shellOpts = process.platform === 'win32'
-        ? { encoding: 'utf8' }
-        : { encoding: 'utf8', shell: '/bin/sh' }
-      const lines = execSync(lookupCmd, shellOpts).split('\n').map(l => l.trim()).filter(Boolean)
+      const lines = execSync('command -v python3 python || true',
+        { encoding: 'utf8', shell: '/bin/sh' })
+        .split('\n').map(l => l.trim()).filter(Boolean)
       for (const line of lines) {
-        if (process.platform === 'win32' && line.toLowerCase().includes('windowsapps')) continue
         if (fs.existsSync(line)) { foundPath = line; break }
       }
     } catch (_) {}
   }
 
-  const pythonExe = foundPath || (process.platform === 'win32' ? 'python' : 'python3')
+  const pythonExe = foundPath || 'python3'
 
   // 4. Persist for next boot.
-  if (pythonExe !== 'python' && pythonExe !== 'python3') {
+  if (pythonExe !== 'python3') {
     try {
       const dir = path.dirname(settingsPath)
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -192,39 +172,22 @@ function findPython() {
 
 function killPortSync(port) {
   const { execSync } = require('child_process')
+  let killed = 0
   try {
-    if (process.platform === 'win32') {
-      const result = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8' })
-      const pids = new Set()
-      for (const line of result.split('\n')) {
-        const m = line.trim().match(/\s(\d+)$/)
-        if (m) pids.add(m[1])
-      }
-      for (const pid of pids) {
-        try { execSync(`taskkill /F /PID ${pid}`, { encoding: 'utf8' }) } catch (_) {}
-      }
-      if (pids.size > 0) console.log(`[Backend] Cleared ${pids.size} process(es) on port ${port}`)
-    } else {
-      // Linux / macOS — lsof first (precise), fall back to fuser.
-      let killed = 0
-      try {
-        const out = execSync(`lsof -ti tcp:${port}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-        const pids = out.split('\n').map(s => s.trim()).filter(Boolean)
-        for (const pid of pids) {
-          try { execSync(`kill -9 ${pid}`); killed++ } catch (_) {}
-        }
-      } catch (_) {
-        // lsof missing or port free — try fuser.
-        try {
-          execSync(`fuser -k ${port}/tcp`, { stdio: 'ignore' })
-          killed = 1
-        } catch (_) { /* port was free */ }
-      }
-      if (killed > 0) console.log(`[Backend] Cleared process(es) on port ${port}`)
+    const out = execSync(`lsof -ti tcp:${port}`,
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    const pids = out.split('\n').map(s => s.trim()).filter(Boolean)
+    for (const pid of pids) {
+      try { execSync(`kill -9 ${pid}`); killed++ } catch (_) {}
     }
   } catch (_) {
-    // Port was free — nothing to kill
+    // lsof missing or port free — try fuser as a fallback.
+    try {
+      execSync(`fuser -k ${port}/tcp`, { stdio: 'ignore' })
+      killed = 1
+    } catch (_) { /* port was free */ }
   }
+  if (killed > 0) console.log(`[Backend] Cleared process(es) on port ${port}`)
 }
 
 // ── First-run dependency installer ──────────────────────────────────────────
@@ -513,8 +476,7 @@ async function startOllama() {
 }
 
 function findBundledBackend() {
-  const exeSuffix = process.platform === 'win32' ? '.exe' : ''
-  const binName = `ame-backend${exeSuffix}`
+  const binName = 'ame-backend'
   const candidates = [
     // Packaged: extraResources lands here
     path.join(process.resourcesPath || '', 'ame-backend', binName),
@@ -1577,14 +1539,10 @@ app.whenReady().then(async () => {
   startOllama()    // Fire-and-forget: boot local Gemma tier if Ollama is installed
   startBackend()   // Backend boots in background; loadApp() called when token is captured
 
-  // System Tray Setup. Linux + macOS prefer PNG; Windows prefers ICO.
-  // We fall back across formats so the tray always gets a real image,
-  // regardless of which the user has under assets/.
-  const iconCandidates = process.platform === 'win32'
-    ? ['ame-orb.ico', 'ame-orb.png']
-    : ['ame-orb.png', 'ame-orb.ico']
+  // System Tray Setup. Linux prefers PNG; we still allow .ico as a fallback
+  // in case the user dropped one in assets/.
   let trayImage = nativeImage.createEmpty()
-  for (const fname of iconCandidates) {
+  for (const fname of ['ame-orb.png', 'ame-orb.ico']) {
     const p = path.join(__dirname, '..', 'assets', fname)
     if (fs.existsSync(p)) {
       const img = nativeImage.createFromPath(p)
@@ -1928,15 +1886,7 @@ ipcMain.handle('orb:capability-get', () => {
 ipcMain.handle('get-session-token', () => sessionToken)
 
 ipcMain.handle('check-admin', () => {
-  if (process.platform === 'win32') {
-    try {
-      require('child_process').execSync('net session', { stdio: 'ignore' })
-      return true
-    } catch (e) {
-      return false
-    }
-  }
-  // POSIX — root if effective UID is 0.
+  // Linux — root if effective UID is 0.
   try { return typeof process.geteuid === 'function' && process.geteuid() === 0 }
   catch (_) { return false }
 })
@@ -1950,24 +1900,12 @@ ipcMain.on('relaunch-admin', () => {
   const cwd = process.cwd()
   const { spawn } = require('child_process')
 
-  if (process.platform === 'win32') {
-    const argsList = args.map(a => `'${a.replace(/'/g, "''")}'`).join(', ')
-    const psCommand = `Start-Process -FilePath '${process.execPath}' -ArgumentList ${argsList} -WorkingDirectory '${cwd}' -Verb RunAs`
-    const ps = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psCommand])
-    ps.on('close', (code) => { if (code === 0) app.quit() })
-  } else {
-    // POSIX — pkexec (PolicyKit) is the standard graphical "Run as root"
-    // prompt on Linux. macOS doesn't have it; we no-op there so we don't
-    // hang the renderer waiting for a non-existent dialog.
-    if (process.platform !== 'linux') {
-      console.log('[Admin] relaunch-admin: no-op on', process.platform)
-      return
-    }
-    const pk = spawn('pkexec', [process.execPath, ...args], { cwd, stdio: 'ignore', detached: true })
-    pk.on('error', (err) => console.log('[Admin] pkexec failed:', err?.message || err))
-    pk.on('close', (code) => { if (code === 0) app.quit() })
-    pk.unref()
-  }
+  // pkexec is the standard PolicyKit "Run as root" prompt on Linux.
+  const pk = spawn('pkexec', [process.execPath, ...args],
+    { cwd, stdio: 'ignore', detached: true })
+  pk.on('error', (err) => console.log('[Admin] pkexec failed:', err?.message || err))
+  pk.on('close', (code) => { if (code === 0) app.quit() })
+  pk.unref()
 })
 
 ipcMain.on('minimize-window', () => mainWindow?.minimize())

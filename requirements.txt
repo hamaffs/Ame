@@ -1,8 +1,14 @@
-# Amé Python backend — Linux-only deps (Phase 1).
-# Windows-only packages (pywin32, pycaw, comtypes) and the modules that
-# depend on them are deliberately omitted until the cross-platform compat
-# layer is in place. The backend will fail to start until those modules
-# are stubbed or branched on sys.platform.
+# Amé Python backend — Linux deps.
+#
+# System packages you may also need (apt names — equivalents exist on other
+# distros):
+#   libportaudio2          for sounddevice
+#   python3-xlib           for pyautogui (X11 only)
+#   xdotool / wmctrl       optional, for advanced window control
+#   xdg-utils              for xdg-open (open_file / open_folder / lock_screen)
+#   pulseaudio-utils       for `pactl` (set_volume / mute_volume)
+#   xclip OR wl-clipboard  for pyperclip
+#   mss + grim + scrot     fallback screenshot tools
 
 # Web stack
 fastapi>=0.115
@@ -13,19 +19,19 @@ pydantic>=2.7
 # Env / config
 python-dotenv>=1.0
 
-# Audio (PortAudio: install system pkg `libportaudio2` on Debian/Ubuntu)
+# Audio capture (PortAudio backend)
 sounddevice>=0.5
 
 # System probing / process control
 psutil>=6.0
 
-# Input automation (Linux: needs `python3-xlib` system pkg for X11 backend)
+# Input automation (X11)
 pyautogui>=0.9.54
 pyperclip>=1.9.0
 
 # Imaging
 Pillow>=10.4
-mss>=10.0          # cross-platform screen capture (replaces PIL.ImageGrab on Linux)
+mss>=10.0
 
 # HTTP
 requests>=2.32
@@ -45,8 +51,13 @@ google-auth-oauthlib>=1.2
 # Spotify
 spotipy>=2.24
 
-# Crypto (Linux DPAPI fallback uses Fernet / PBKDF2)
+# Crypto (Fernet / PBKDF2-HMAC for at-rest memory encryption)
 cryptography>=43.0
+
+# File reading (read_file tool — PDF/Excel/Word)
+pypdf>=4.0
+openpyxl>=3.1
+python-docx>=1.1
 
 # Dev / test
 pytest>=8.3

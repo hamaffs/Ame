@@ -4,14 +4,23 @@ import { Loader2, CheckCircle, XCircle } from 'lucide-react'
 
 /**
  * First-run setup. App.jsx mounts this when `envReady === false` (the backend
- * told us no .env / API key is configured yet). On submit we POST to the
- * backend `/env/save` endpoint, then call onComplete to swap back to App.
+ * told us no .env / API key is configured yet).
+ *
+ * Flow:
+ *   1. Validate the key against the provider via POST /test-provider
+ *   2. Persist via POST /setup
+ *   3. Call onComplete() so App swaps back to the main UI
+ *
+ * Both endpoints require the session token (Authorization: Bearer <token>),
+ * which Electron's preload exposes via window.electronAPI.getSessionToken().
+ * When running in a plain browser tab (no Electron) the token is null and
+ * the backend will 403 — that's expected; production use is through Electron.
  */
 export default function WelcomePage({ onComplete }) {
   const [keys, setKeys] = useState({
-    GEMINI_API_KEY: '',
     GOOGLE_AI_STUDIO_KEY: '',
     GROQ_API_KEY: '',
+    name: '',
   })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState(null)
@@ -19,20 +28,60 @@ export default function WelcomePage({ onComplete }) {
   const update = (k) => (e) => setKeys((prev) => ({ ...prev, [k]: e.target.value }))
 
   const submit = async () => {
-    const filled = Object.entries(keys).filter(([, v]) => v.trim().length > 0)
-    if (filled.length === 0) {
+    const hasKey = (keys.GOOGLE_AI_STUDIO_KEY || keys.GROQ_API_KEY || '').trim().length > 0
+    if (!hasKey) {
       setError('Add at least one API key to continue.')
       return
     }
     setSaving(true); setError(null)
+
     try {
       const backend = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8766'
-      const res = await fetch(`${backend}/env/save`, {
+
+      // Grab the session token from the Electron preload bridge.
+      let token = null
+      try { token = await window.electronAPI?.getSessionToken?.() } catch (_) {}
+      const auth = token ? { Authorization: `Bearer ${token}` } : {}
+
+      // Step 1 — validate the key against the provider.
+      const testRes = await fetch(`${backend}/test-provider`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.fromEntries(filled)),
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({
+          GROQ_API_KEY: keys.GROQ_API_KEY.trim(),
+          GOOGLE_AI_STUDIO_KEY: keys.GOOGLE_AI_STUDIO_KEY.trim(),
+        }),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (testRes.status === 403) {
+        throw new Error('Backend rejected the request — session token missing. Launch Amé via Electron (`ame`), not the raw browser.')
+      }
+      if (!testRes.ok) {
+        throw new Error(`Provider test failed: HTTP ${testRes.status}`)
+      }
+      const testJson = await testRes.json().catch(() => ({}))
+      if (testJson.ok === false) {
+        throw new Error(testJson.error || 'Key rejected by provider')
+      }
+
+      // Step 2 — persist into ~/.config/ame/.env (Linux) / %APPDATA%\ame\.env (Win).
+      const saveRes = await fetch(`${backend}/setup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({
+          name: keys.name.trim(),
+          provider: keys.GOOGLE_AI_STUDIO_KEY ? 'gemini' : 'groq',
+          GROQ_API_KEY: keys.GROQ_API_KEY.trim(),
+          GOOGLE_AI_STUDIO_KEY: keys.GOOGLE_AI_STUDIO_KEY.trim(),
+        }),
+      })
+      if (!saveRes.ok) {
+        const body = await saveRes.json().catch(() => ({}))
+        throw new Error(body.message || `Save failed: HTTP ${saveRes.status}`)
+      }
+
+      // Let Electron know the wizard is complete (used to unlock the orb hotkey).
+      try { window.electronAPI?.orbSend?.('wizard:complete') } catch (_) {}
+
       onComplete?.()
     } catch (e) {
       setError(e.message || 'Save failed')
@@ -60,12 +109,13 @@ export default function WelcomePage({ onComplete }) {
         </p>
 
         <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Field label="Gemini API key (recommended)"
+          <Field label="Your name (optional)"
+                 hint="So Amé knows what to call you."
+                 type="text"
+                 value={keys.name}
+                 onChange={update('name')} />
+          <Field label="Google AI Studio / Gemini key (recommended)"
                  hint="From aistudio.google.com — drives Gemini Live voice and most tasks."
-                 value={keys.GEMINI_API_KEY}
-                 onChange={update('GEMINI_API_KEY')} />
-          <Field label="Google AI Studio key (alias)"
-                 hint="Same key as Gemini; either field works."
                  value={keys.GOOGLE_AI_STUDIO_KEY}
                  onChange={update('GOOGLE_AI_STUDIO_KEY')} />
           <Field label="Groq API key (optional)"
@@ -75,8 +125,9 @@ export default function WelcomePage({ onComplete }) {
         </div>
 
         {error && (
-          <div style={{ marginTop: 16, color: 'var(--ame-rose, #ff7a9b)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <XCircle size={13} /> {error}
+          <div style={{ marginTop: 16, color: 'var(--ame-rose, #ff7a9b)', fontSize: 12, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+            <XCircle size={13} style={{ marginTop: 2, flexShrink: 0 }} />
+            <span>{error}</span>
           </div>
         )}
 
@@ -88,7 +139,7 @@ export default function WelcomePage({ onComplete }) {
             style={{ display: 'flex', alignItems: 'center', gap: 8 }}
           >
             {saving ? <Loader2 size={13} className="spin" /> : <CheckCircle size={13} />}
-            {saving ? 'Saving…' : 'Continue'}
+            {saving ? 'Validating…' : 'Continue'}
           </button>
           <button
             className="btn-ghost"
@@ -107,15 +158,15 @@ export default function WelcomePage({ onComplete }) {
   )
 }
 
-function Field({ label, hint, value, onChange }) {
+function Field({ label, hint, value, onChange, type = 'password' }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ame-text-secondary, #888)' }}>{label}</span>
       <input
-        type="password"
+        type={type}
         value={value}
         onChange={onChange}
-        placeholder="paste key…"
+        placeholder={type === 'text' ? 'your name…' : 'paste key…'}
         style={{
           background: 'var(--ame-bg-card, #111)',
           border: '1px solid var(--ame-border, #222)',

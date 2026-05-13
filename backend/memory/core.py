@@ -31,6 +31,10 @@ class AmeMemory:
     def __init__(self):
         self._identity_data = layer1.load_identity()
         self._identity_lock = threading.Lock()
+        # extract_personality / extract_and_store run in background threads and
+        # increment these counters to gate "every-Nth-turn" extraction work.
+        # The lock protects them across concurrent turns.
+        self._counter_lock = threading.Lock()
         self._extract_turn_counter = 0
         self._personality_turn_counter = 0
 
