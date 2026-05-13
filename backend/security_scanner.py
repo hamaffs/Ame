@@ -2,8 +2,13 @@
 Ame First-Time Security Scanner.
 Waits for High (Autopilot) permission, performs a deep system & code audit,
 and proactively delivers a personalized security report to the user.
+
+Cross-platform: branches on `sys.platform`. Windows uses PowerShell to
+inspect Firewall + Defender; Linux uses `ufw`/`firewalld` + checks for an
+active AV daemon (clamd); macOS uses `defaults read` on the firewall plist.
 """
 import os
+import sys
 import time
 import threading
 import subprocess
@@ -37,24 +42,54 @@ class SecurityScanner:
         time.sleep(60)
 
         sys_info = []
-        
-        # 2. Gather Windows Security Info (Firewall & Defender)
+
+        # 2. Gather platform-specific posture info.
         try:
-            # Firewall
-            fw = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", "Get-NetFirewallProfile | Select-Object Name,Enabled | ConvertTo-Json"],
-                capture_output=True, text=True, timeout=10
-            )
-            if fw.stdout:
-                sys_info.append(f"Firewall Profiles:\n{fw.stdout.strip()}")
-            
-            # Antivirus / Defender
-            av = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", "Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,AntispywareEnabled | ConvertTo-Json"],
-                capture_output=True, text=True, timeout=10
-            )
-            if av.stdout:
-                sys_info.append(f"Windows Defender Status:\n{av.stdout.strip()}")
+            if sys.platform == "win32":
+                fw = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     "Get-NetFirewallProfile | Select-Object Name,Enabled | ConvertTo-Json"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if fw.stdout:
+                    sys_info.append(f"Firewall Profiles:\n{fw.stdout.strip()}")
+                av = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     "Get-MpComputerStatus | Select-Object RealTimeProtectionEnabled,AntispywareEnabled | ConvertTo-Json"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if av.stdout:
+                    sys_info.append(f"Windows Defender Status:\n{av.stdout.strip()}")
+            elif sys.platform.startswith("linux"):
+                # ufw / firewall-cmd / iptables in priority order
+                for cmd in (["ufw", "status"],
+                            ["firewall-cmd", "--state"],
+                            ["systemctl", "is-active", "iptables"]):
+                    try:
+                        r = subprocess.run(cmd, capture_output=True, text=True, timeout=4)
+                        if r.stdout.strip() or r.stderr.strip():
+                            sys_info.append(f"{cmd[0]}: {r.stdout.strip() or r.stderr.strip()}")
+                            break
+                    except FileNotFoundError:
+                        continue
+                # ClamAV is the closest equivalent to Defender on Linux.
+                try:
+                    r = subprocess.run(["systemctl", "is-active", "clamav-daemon"],
+                                       capture_output=True, text=True, timeout=4)
+                    sys_info.append(f"ClamAV daemon: {r.stdout.strip() or 'unknown'}")
+                except FileNotFoundError:
+                    pass
+            elif sys.platform == "darwin":
+                # macOS Application Firewall
+                try:
+                    r = subprocess.run(
+                        ["/usr/libexec/ApplicationFirewall/socketfilterfw", "--getglobalstate"],
+                        capture_output=True, text=True, timeout=4,
+                    )
+                    if r.stdout:
+                        sys_info.append(f"macOS Firewall: {r.stdout.strip()}")
+                except FileNotFoundError:
+                    pass
         except Exception as e:
             print(f"[SecurityScanner] System scan error: {e}")
 

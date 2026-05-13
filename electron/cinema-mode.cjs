@@ -1,5 +1,3 @@
-,
-}
 // WP-11 — Cinema mode detector.
 //
 // Detects when the user is in fullscreen (game, video, etc.) and reports
@@ -95,4 +93,4 @@ function createCinemaDetector({ getOrbWindow, onEnter, onExit } = {}) {
   return { start, stop, isActive }
 }
 
-module.exports = { createCinemaDetecto
+module.exports = { createCinemaDetector }

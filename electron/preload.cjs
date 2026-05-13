@@ -1,5 +1,3 @@
-,
-}
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -160,3 +158,4 @@ contextBridge.exposeInMainWorld('orbAPI', {
     return () => ipcRenderer.removeListener('orb:birth-start', h)
   },
   reportBirthStage: (payload) => ipcRenderer.send('orb:birth-stage', payload),
+})

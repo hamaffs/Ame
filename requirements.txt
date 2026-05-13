@@ -1,0 +1,52 @@
+# Amé Python backend — Linux-only deps (Phase 1).
+# Windows-only packages (pywin32, pycaw, comtypes) and the modules that
+# depend on them are deliberately omitted until the cross-platform compat
+# layer is in place. The backend will fail to start until those modules
+# are stubbed or branched on sys.platform.
+
+# Web stack
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-socketio>=5.11
+pydantic>=2.7
+
+# Env / config
+python-dotenv>=1.0
+
+# Audio (PortAudio: install system pkg `libportaudio2` on Debian/Ubuntu)
+sounddevice>=0.5
+
+# System probing / process control
+psutil>=6.0
+
+# Input automation (Linux: needs `python3-xlib` system pkg for X11 backend)
+pyautogui>=0.9.54
+pyperclip>=1.9.0
+
+# Imaging
+Pillow>=10.4
+mss>=10.0          # cross-platform screen capture (replaces PIL.ImageGrab on Linux)
+
+# HTTP
+requests>=2.32
+httpx>=0.27
+
+# File watching
+watchdog>=5.0
+
+# Web automation (headless browser agent)
+playwright>=1.47
+
+# Google / Gemini
+google-genai>=0.3.0
+google-api-python-client>=2.146
+google-auth-oauthlib>=1.2
+
+# Spotify
+spotipy>=2.24
+
+# Crypto (Linux DPAPI fallback uses Fernet / PBKDF2)
+cryptography>=43.0
+
+# Dev / test
+pytest>=8.3

@@ -1,5 +1,3 @@
-,
-}
 // Orb foundation: state cache, home persistence, move-suppression guard.
 // All orb-related state that needs to survive window recreate lives here.
 //
@@ -200,4 +198,5 @@ module.exports = {
   isPointInAnyDisplay,
   loadCapability,
   saveCapability,
-  getCapabilityTier
+  getCapabilityTier,
+}

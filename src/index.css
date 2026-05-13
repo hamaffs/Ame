@@ -1,11 +1,13 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* ============================================================
    AMÉ — JARVIS / BLADE RUNNER DESIGN SYSTEM
    All colors driven by CSS variables — theme changes at runtime
    ============================================================ */
-
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
   /* ── Core palette — defaults (Linear/Raycast neutral dark) ─────── */

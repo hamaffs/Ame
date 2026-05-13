@@ -1,5 +1,3 @@
-
-})
 /**
  * WP-06 — Bloom-from-within.
  *
@@ -147,4 +145,5 @@ module.exports = {
   BLOOM_IN_MS,
   BLOOM_OUT_MS,
   BLOOM_IN_TOTAL,
-  BLOOM_OUT_TOTAL
+  BLOOM_OUT_TOTAL,
+}

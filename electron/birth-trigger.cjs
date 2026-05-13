@@ -1,5 +1,4 @@
- }
-}// WP-12 — Birth trigger.
+// WP-12 — Birth trigger.
 //
 // Watches for wizard completion on first launch (marker files absent), picks
 // a first sentence deterministically from the user's name, writes it to disk
@@ -176,4 +175,5 @@ module.exports = {
   handleStage,
   readFirstSentence: () => state.firstSentence,
   FIRST_SENTENCES,
-  _reset
+  _reset,
+}

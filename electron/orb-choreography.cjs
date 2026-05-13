@@ -1,5 +1,3 @@
-,
-}
 /**
  * WP-05 — Arrival choreography.
  *
@@ -350,4 +348,5 @@ module.exports = {
   TOTAL_MOVE_MS,
   CROSS_DISPLAY_FLIGHT_MS,
   BOUNDARY_PULSE_MS,
-  computeCrossDisplay
+  computeCrossDisplay,
+}

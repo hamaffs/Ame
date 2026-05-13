@@ -317,7 +317,7 @@ async def setup(payload: SetupPayload, request: Request):
 
 
 @sio.event
-async def connect(sid, environ):
+async def connect(sid, environ, auth=None):
     print(f"[Ame] Client connected: {sid}")
     await sio.emit('state_change', {'state': 'listening'}, to=sid)
 

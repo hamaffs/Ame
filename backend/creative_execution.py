@@ -1,234 +1,279 @@
-﻿# Source Generated with Decompyle++
-# File: creative_execution.pyc (Python 3.11)
+"""Creative Execution — Amé builds *with* you.
 
-'''Creative Execution ΓÇö Am├⌐ builds *with* you (Milestone 5).
-
-`creative_soul.py` is the translator (free tier, unlimited). This module is
-the executor ΓÇö she actually drives the user\'s tools to author the project.
-Quota is enforced at the dispatcher (`creative_execute_plan` -> bucket
-`creative_execution`). Voice "stop" halts within ~500ms. Every 3-5 actions
-she pauses, describes the next batch, and waits for the user to confirm
-through the existing `confirm_action` flow.
-
-Two execution modes ship in M5:
-
-- **text_target** (p5.js, shaders): she generates the code, writes it inside
-  the project directory, and opens the target tool with it. One quota unit
-  covers the whole authoring of one file.
-- **gui_target** (Photoshop, TouchDesigner): a checkpointed loop ΓÇö she
-  describes the next 3-5 hotkey/click steps, asks for confirmation, then
-  runs them. After each batch she pauses again. She cannot run unsupervised
-  for more than ~30s.
+`creative_soul.py` is the translator. This module is the executor — she
+actually drives the user's tools to author the project. Voice "stop" halts
+within ~500ms. Every 3-5 actions she pauses, describes the next batch, and
+waits for the user to confirm.
 
 Safety rails (non-negotiable):
-- File writes stay inside `session.project_dir`. Anything outside is refused
-  + logged. No path traversal: the resolved absolute path must start with
-  the resolved project directory.
+- File writes stay inside `session.project_dir`. Anything outside is refused.
 - No installer launches, asset purchases, or system-setting changes.
-- Hard-stop on the global "stop" voice command (live_session sets
-  session.stopped, the loop polls every step).
-- Destructive actions reuse the existing `confirm_action` flow inside
-  live_session; the checkpoint pauses ride on top of that.
-'''
+- Hard-stop on the global "stop" voice command.
+"""
+
 from __future__ import annotations
 import asyncio
 import os
-import time
+import subprocess
+import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
-CreativeSession = <NODE:12>()
-_active: 'CreativeSession | None' = None
+
+
+@dataclass
+class CreativeSession:
+    target: str
+    project_dir: Path
+    plan: list[dict]
+    cursor: int = 0
+    paused: bool = False
+    stopped: bool = False
+    speak: Callable[[str], None] | None = None
+    request_confirm: Callable[[str, str], "asyncio.Future[bool]"] | None = None
+    log: list[dict] = field(default_factory=list)
+
+
+_active: CreativeSession | None = None
 _lock = threading.RLock()
 
-def _set_active(sess = None):
-    pass
-# WARNING: Decompyle incomplete
+
+def _set_active(sess: CreativeSession | None) -> None:
+    global _active
+    with _lock:
+        _active = sess
 
 
-def get_active_session():
-    """Public read-only accessor ΓÇö used by live_session to inject 'stop'."""
-    pass
-# WARNING: Decompyle incomplete
+def get_active_session() -> CreativeSession | None:
+    """Public read-only accessor — used by live_session to inject 'stop'."""
+    with _lock:
+        return _active
 
 
 class SandboxViolation(Exception):
-    '''Raised when an authoring step tries to escape the project directory.'''
-    pass
+    """Raised when an authoring step tries to escape the project directory."""
 
 
-def safe_join(project_dir = None, requested = None):
-    """Resolve `requested` (relative or absolute) against `project_dir` and
-    refuse anything that lands outside. Symlinks are followed during resolve
-    so a symlink trick can't escape either.
-    """
+def safe_join(project_dir: Path, requested: str) -> Path:
+    """Resolve `requested` against `project_dir` and refuse anything outside."""
     pd = project_dir.resolve()
     candidate = pd / requested if not os.path.isabs(requested) else Path(requested)
     resolved = candidate.resolve()
-    resolved.relative_to(pd)
-# WARNING: Decompyle incomplete
-
-_VALID_KINDS = {
-    'wait',
-    'hotkey',
-    'describe',
-    'open_file',
-    'type_text',
-    'write_file'}
-_DESTRUCTIVE_KINDS = {
-    'write_file'}
-
-def normalize_plan(steps = None):
-    '''Validate + normalize incoming plan. Raises ValueError on bad shapes.
-
-    Each step is:
-      {"kind": "write_file", "path": "sketch.js", "content": "..."}
-      {"kind": "open_file",  "path": "sketch.js"}
-      {"kind": "hotkey",     "keys": ["ctrl", "s"]}
-      {"kind": "type_text",  "text": "..."}
-      {"kind": "describe",   "text": "what she\'s about to do, spoken to user"}
-      {"kind": "wait",       "seconds": 1.0}
-    '''
-    if not isinstance(steps, list) or steps:
-        raise ValueError('plan must be a non-empty list')
-    out = []
-# WARNING: Decompyle incomplete
+    try:
+        resolved.relative_to(pd)
+    except ValueError:
+        raise SandboxViolation(f"Path escapes project dir: {requested}")
+    return resolved
 
 
-def _execute_step(sess = None, step = None):
-    '''Run a single step. Pure-sync so the dispatcher can `to_thread` it.
-    Returns a small dict for the spoken note / log.'''
-    kind = step['kind']
-    if kind == 'write_file':
-        target = safe_join(sess.project_dir, step['path'])
-        target.parent.mkdir(parents = True, exist_ok = True)
-        target.write_text(step['content'], encoding = 'utf-8')
-        return {
-            'ok': True,
-            'kind': kind,
-            'path': str(target),
-            'bytes': len(step['content']) }
-    if None == 'open_file':
-        target = safe_join(sess.project_dir, step['path'])
+_VALID_KINDS = {"wait", "hotkey", "describe", "open_file", "type_text", "write_file"}
+_DESTRUCTIVE_KINDS = {"write_file"}
+
+
+def normalize_plan(steps: list[dict]) -> list[dict]:
+    """Validate + normalize incoming plan. Raises ValueError on bad shapes."""
+    if not isinstance(steps, list) or not steps:
+        raise ValueError("plan must be a non-empty list")
+    out: list[dict] = []
+    for i, raw in enumerate(steps):
+        if not isinstance(raw, dict) or "kind" not in raw:
+            raise ValueError(f"step {i}: not a dict / missing 'kind'")
+        kind = raw["kind"]
+        if kind not in _VALID_KINDS:
+            raise ValueError(f"step {i}: unknown kind '{kind}'")
+        step = {"kind": kind}
+        if kind == "write_file":
+            step["path"]    = str(raw["path"])
+            step["content"] = str(raw.get("content", ""))
+        elif kind == "open_file":
+            step["path"] = str(raw["path"])
+        elif kind == "hotkey":
+            step["keys"] = list(raw.get("keys") or [])
+        elif kind == "type_text":
+            step["text"] = str(raw.get("text", ""))
+        elif kind == "describe":
+            step["text"] = str(raw.get("text", ""))
+        elif kind == "wait":
+            step["seconds"] = float(raw.get("seconds", 1.0))
+        out.append(step)
+    return out
+
+
+def _open_file_native(path: Path) -> None:
+    if sys.platform == "win32":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
+
+
+def _execute_step(sess: CreativeSession, step: dict) -> dict:
+    """Run a single step. Pure-sync so the dispatcher can `to_thread` it."""
+    kind = step["kind"]
+    if kind == "write_file":
+        target = safe_join(sess.project_dir, step["path"])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(step["content"], encoding="utf-8")
+        return {"ok": True, "kind": kind, "path": str(target), "bytes": len(step["content"])}
+    if kind == "open_file":
+        target = safe_join(sess.project_dir, step["path"])
         if not target.exists():
-            return {
-                'ok': False,
-                'kind': kind,
-                'error': f'''file does not exist: {target}''' }
-        os.startfile(str(target))
-# WARNING: Decompyle incomplete
+            return {"ok": False, "kind": kind, "error": f"file does not exist: {target}"}
+        _open_file_native(target)
+        return {"ok": True, "kind": kind, "path": str(target)}
+    if kind == "hotkey":
+        try:
+            import pyautogui  # type: ignore
+            pyautogui.hotkey(*step["keys"])
+            return {"ok": True, "kind": kind, "keys": step["keys"]}
+        except Exception as e:
+            return {"ok": False, "kind": kind, "error": str(e)}
+    if kind == "type_text":
+        try:
+            import pyautogui  # type: ignore
+            pyautogui.typewrite(step["text"], interval=0.02)
+            return {"ok": True, "kind": kind, "chars": len(step["text"])}
+        except Exception as e:
+            return {"ok": False, "kind": kind, "error": str(e)}
+    if kind == "describe":
+        if sess.speak:
+            try: sess.speak(step["text"])
+            except Exception: pass
+        return {"ok": True, "kind": kind, "spoken": step["text"]}
+    if kind == "wait":
+        time.sleep(min(10.0, max(0.0, step["seconds"])))
+        return {"ok": True, "kind": kind, "seconds": step["seconds"]}
+    return {"ok": False, "kind": kind, "error": "unhandled kind"}
+
 
 CHECKPOINT_EVERY = 4
 
-def _next_batch(sess = None):
-    '''Return the next CHECKPOINT_EVERY steps, or empty if plan exhausted.'''
+
+def _next_batch(sess: CreativeSession) -> list[dict]:
     return sess.plan[sess.cursor:sess.cursor + CHECKPOINT_EVERY]
 
 
-def _summarize_batch(batch = None):
-    '''One-line human summary of a batch ΓÇö shown in the confirm dialog.'''
-    lines = []
+def _summarize_batch(batch: list[dict]) -> str:
+    """One-line human summary of a batch — shown in the confirm dialog."""
+    lines: list[str] = []
     for step in batch:
-        k = step['kind']
-        if k == 'write_file':
-            lines.append(f'''write {step['path']} ({len(step['content'])} chars)''')
-            continue
-        if k == 'open_file':
-            lines.append(f'''open {step['path']}''')
-            continue
-        if k == 'hotkey':
-            lines.append(f'''press {'+'.join(step['keys'])}''')
-            continue
-        if k == 'type_text':
-            preview = step['text'][:40].replace('\n', '\\n')
-            lines.append(f'''type "{preview}"''')
-            continue
-        if k == 'describe':
-            lines.append(f'''say: {step['text'][:60]}''')
-            continue
-        if k == 'wait':
-            lines.append(f'''wait {step['seconds']}s''')
-        return '\n'.join(lines)
+        k = step["kind"]
+        if   k == "write_file": lines.append(f"write {step['path']} ({len(step['content'])} chars)")
+        elif k == "open_file":  lines.append(f"open {step['path']}")
+        elif k == "hotkey":     lines.append(f"press {'+'.join(step['keys'])}")
+        elif k == "type_text":  lines.append(f'type "{step["text"][:40].replace(chr(10), chr(92)+"n")}"')
+        elif k == "describe":   lines.append(f"say: {step['text'][:60]}")
+        elif k == "wait":       lines.append(f"wait {step['seconds']}s")
+    return "\n".join(lines)
 
 
-async def run_session(sess = None):
-    '''Drive the plan to completion, pausing at each checkpoint.
+async def run_session(sess: CreativeSession) -> dict:
+    """Drive the plan to completion, pausing at each checkpoint."""
+    log: list[dict] = sess.log
+    total = len(sess.plan)
+    while sess.cursor < total:
+        if sess.stopped:
+            return {"success": True, "completed": sess.cursor, "total": total,
+                    "stopped": True, "abandoned": False, "log": log}
+        while sess.paused and not sess.stopped:
+            await asyncio.sleep(0.2)
 
-    Returns a dict shaped like:
-      {"success": True, "completed": int, "total": int,
-       "stopped": bool, "abandoned": bool, "log": [...]}
-    '''
-    pass
-# WARNING: Decompyle incomplete
+        batch = _next_batch(sess)
+        if not batch:
+            break
+        if sess.request_confirm:
+            try:
+                summary = _summarize_batch(batch)
+                ok = await sess.request_confirm("Continue?", summary)
+                if not ok:
+                    return {"success": True, "completed": sess.cursor, "total": total,
+                            "stopped": False, "abandoned": True, "log": log}
+            except Exception:
+                # Confirm flow broke — abandon to be safe.
+                return {"success": False, "completed": sess.cursor, "total": total,
+                        "stopped": False, "abandoned": True, "log": log,
+                        "error": "confirm channel failed"}
+
+        for step in batch:
+            if sess.stopped:
+                break
+            result = await asyncio.to_thread(_execute_step, sess, step)
+            log.append(result)
+            sess.cursor += 1
+            await asyncio.sleep(0.05)
+
+    return {"success": True, "completed": sess.cursor, "total": total,
+            "stopped": sess.stopped, "abandoned": False, "log": log}
 
 
-def creative_execute_plan(target = None, project_dir = None, plan = None, speak = (None, None), request_confirm = ('target', 'str', 'project_dir', 'str', 'plan', 'list[dict]', 'speak', 'Callable[[str], None] | None', 'request_confirm', "Callable[[str, str], 'asyncio.Future[bool]'] | None", 'return', 'CreativeSession')):
-    '''Build the session and return it. The dispatcher is responsible for
-    `await run_session(sess)` and emitting the eventual result back to the
-    model. Quota consumption already happened at the dispatcher.
-    '''
-    if target not in frozenset({'p5js', 'shader', 'photoshop', 'touchdesigner'}):
-        raise ValueError(f'''unknown target \'{target}\' (supported in M5: p5js, shader, photoshop, touchdesigner)''')
+def creative_execute_plan(target: str,
+                          project_dir: str,
+                          plan: list[dict],
+                          speak: Callable[[str], None] | None = None,
+                          request_confirm: Callable[[str, str], "asyncio.Future[bool]"] | None = None) -> CreativeSession:
+    """Build the session and return it."""
+    if target not in frozenset({"p5js", "shader", "photoshop", "touchdesigner"}):
+        raise ValueError(f"unknown target '{target}'")
     pd = Path(project_dir).expanduser()
-    pd.mkdir(parents = True, exist_ok = True)
+    pd.mkdir(parents=True, exist_ok=True)
     pd_resolved = pd.resolve()
-    forbidden_roots = [
-        Path(os.environ.get('WINDIR', 'C:/Windows')).resolve(),
-        Path(os.environ.get('ProgramFiles', 'C:/Program Files')).resolve(),
-        Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')).resolve()]
-# WARNING: Decompyle incomplete
+    # Refuse if the project dir lands inside any forbidden root.
+    forbidden_roots: list[Path] = []
+    if sys.platform == "win32":
+        for env in ("WINDIR", "ProgramFiles", "ProgramFiles(x86)"):
+            v = os.environ.get(env)
+            if v:
+                try: forbidden_roots.append(Path(v).resolve())
+                except Exception: pass
+    else:
+        forbidden_roots += [Path("/etc"), Path("/usr"), Path("/var"), Path("/root")]
+    for forbidden in forbidden_roots:
+        try:
+            pd_resolved.relative_to(forbidden)
+            raise SandboxViolation(f"Project dir is inside protected path: {forbidden}")
+        except ValueError:
+            continue
+
+    normalized = normalize_plan(plan)
+    sess = CreativeSession(target=target, project_dir=pd_resolved, plan=normalized,
+                           speak=speak, request_confirm=request_confirm)
+    _set_active(sess)
+    return sess
 
 
-def creative_pause():
+def creative_pause() -> dict:
     sess = get_active_session()
     if not sess:
-        return {
-            'success': False,
-            'message': 'No active creative session.',
-            'ame_should_say': "There's nothing running right now." }
-    sess.paused = None
-    return {
-        'success': True,
-        'paused_at': sess.cursor,
-        'total': len(sess.plan),
-        'ame_should_say': "Paused. Say resume when you're ready." }
+        return {"success": False, "message": "No active creative session.",
+                "ame_should_say": "There's nothing running right now."}
+    sess.paused = True
+    return {"success": True, "paused_at": sess.cursor, "total": len(sess.plan),
+            "ame_should_say": "Paused. Say resume when you're ready."}
 
 
-def creative_resume():
+def creative_resume() -> dict:
     sess = get_active_session()
     if not sess:
-        return {
-            'success': False,
-            'message': 'No active creative session.',
-            'ame_should_say': "Nothing's paused ΓÇö we're clear." }
-    if not None.paused:
-        return {
-            'success': True,
-            'message': 'Already running.',
-            'ame_should_say': 'Already going.' }
-    sess.paused = None
-    return {
-        'success': True,
-        'resumed_at': sess.cursor,
-        'total': len(sess.plan),
-        'ame_should_say': 'Back at it.' }
+        return {"success": False, "message": "No active creative session.",
+                "ame_should_say": "Nothing's paused — we're clear."}
+    if not sess.paused:
+        return {"success": True, "message": "Already running.", "ame_should_say": "Already going."}
+    sess.paused = False
+    return {"success": True, "resumed_at": sess.cursor, "total": len(sess.plan),
+            "ame_should_say": "Back at it."}
 
 
-def creative_abandon():
+def creative_abandon() -> dict:
     sess = get_active_session()
     if not sess:
-        return {
-            'success': False,
-            'message': 'No active creative session.',
-            'ame_should_say': "There's nothing to stop." }
-    sess.stopped = None
+        return {"success": False, "message": "No active creative session.",
+                "ame_should_say": "There's nothing to stop."}
+    sess.stopped = True
     completed = sess.cursor
     total = len(sess.plan)
     _set_active(None)
-    return {
-        'success': True,
-        'stopped_at': completed,
-        'total': total,
-        'ame_should_say': 'Done with it. We can pick a different angle whenever.' }
-
+    return {"success": True, "stopped_at": completed, "total": total,
+            "ame_should_say": "Done with it. We can pick a different angle whenever."}

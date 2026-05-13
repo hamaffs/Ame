@@ -1,6 +1,11 @@
 """
-Windows PC control functions for Ame AI assistant.
+Cross-platform PC control for Amé AI assistant.
 Handles application management, volume, screenshots, clipboard, etc.
+
+The original implementation was Windows-only. Platform-specific imports
+(winreg, comtypes, pycaw, win32gui) are now guarded behind `sys.platform`
+checks so the module can be imported on Linux / macOS without crashing.
+Functions that have no cross-platform analogue degrade gracefully.
 """
 
 import sys, os
@@ -12,7 +17,6 @@ if hasattr(sys.stderr, 'reconfigure'): sys.stderr.reconfigure(encoding='utf-8', 
 import subprocess
 import ctypes
 import time
-import winreg
 from pathlib import Path
 from datetime import datetime
 import re
@@ -21,9 +25,20 @@ import psutil
 import pyautogui
 import pyperclip
 
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-from ctypes import cast, POINTER
-from comtypes import CLSCTX_ALL
+_IS_WIN  = sys.platform == 'win32'
+_IS_MAC  = sys.platform == 'darwin'
+_IS_LIN  = sys.platform.startswith('linux')
+
+# Windows-only modules — import lazily so this file works on Linux/macOS.
+winreg = None  # populated below on Windows
+if _IS_WIN:
+    try:
+        import winreg  # type: ignore
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume  # type: ignore
+        from ctypes import cast, POINTER
+        from comtypes import CLSCTX_ALL  # type: ignore
+    except Exception as _e:
+        print(f"[pc_control] Windows audio/registry libs unavailable: {_e}")
 
 
 DESKTOP   = os.path.join(os.path.expanduser('~'), 'Desktop')
